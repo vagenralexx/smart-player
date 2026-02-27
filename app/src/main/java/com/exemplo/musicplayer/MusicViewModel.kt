@@ -261,11 +261,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         positionJob = viewModelScope.launch {
             while (true) {
                 delay(500)
-                mediaController?.let { ctrl ->
-                    val pos = ctrl.currentPosition.coerceAtLeast(0L)
-                    val dur = if (ctrl.duration == C.TIME_UNSET) 0L
-                              else ctrl.duration.coerceAtLeast(0L)
-                    _uiState.update { it.copy(currentPositionMs = pos, totalDurationMs = dur) }
+                try {
+                    mediaController?.let { ctrl ->
+                        val pos = ctrl.currentPosition.coerceAtLeast(0L)
+                        val dur = if (ctrl.duration == C.TIME_UNSET) 0L
+                                  else ctrl.duration.coerceAtLeast(0L)
+                        _uiState.update { it.copy(currentPositionMs = pos, totalDurationMs = dur) }
+                    }
+                } catch (_: Exception) {
+                    // Controller pode estar desconectado temporariamente — ignora e continua
                 }
             }
         }

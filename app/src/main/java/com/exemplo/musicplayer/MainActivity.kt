@@ -833,7 +833,11 @@ fun ArtistDetailScreen(
     var artistInfo   by remember(artistName) { mutableStateOf<MusicBrainzFetcher.ArtistInfo?>(null) }
     var mbLoading    by remember(artistName) { mutableStateOf(true) }
     LaunchedEffect(artistName) {
-        artistInfo = MusicBrainzFetcher.fetchArtistInfo(artistName)
+        try {
+            artistInfo = MusicBrainzFetcher.fetchArtistInfo(artistName)
+        } catch (_: Exception) {
+            artistInfo = null
+        }
         mbLoading  = false
     }
 

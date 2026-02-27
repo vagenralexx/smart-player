@@ -13,7 +13,8 @@ import java.net.URLEncoder
  */
 object ArtworkFetcher {
 
-    private val cache = mutableMapOf<String, String?>()
+    private const val MAX_CACHE_SIZE = 300
+    private val cache = mutableMapOf<String, String?>()  // max MAX_CACHE_SIZE entries
 
     /**
      * Devolve URL da capa do álbum em alta resolução (600x600) ou null.
@@ -22,6 +23,12 @@ object ArtworkFetcher {
     suspend fun fetchArtworkUrl(artist: String, album: String): String? {
         val key = "$artist|$album"
         if (cache.containsKey(key)) return cache[key]
+
+        // Evita crescimento ilimitado do cache
+        if (cache.size >= MAX_CACHE_SIZE) {
+            val oldest = cache.keys.firstOrNull()
+            if (oldest != null) cache.remove(oldest)
+        }
 
         return withContext(Dispatchers.IO) {
             try {

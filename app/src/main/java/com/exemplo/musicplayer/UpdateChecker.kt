@@ -48,10 +48,24 @@ object UpdateChecker {
             val json = URL(API_URL).readText(Charsets.UTF_8)
             val obj  = JSONObject(json)
 
-            val latestVersion = obj.getString("tag_name")   // ex: "v1.2.0"
+            val latestVersion = obj.getString("tag_name").trim()   // ex: "v1.2.0"
 
-            // Comparação simples por string — funciona se as tags forem vX.Y.Z
-            if (latestVersion == currentVersion) return@withContext null
+            // Comparação semântica: ignora espaços e diferenças de maiúsculas
+            if (latestVersion.equals(currentVersion.trim(), ignoreCase = true)) return@withContext null
+
+            // Garante que a versão do GitHub é de facto mais recente (evita "downgrade" falso)
+            val latest = latestVersion.trimStart('v', 'V')
+            val current = currentVersion.trimStart('v', 'V')
+            val latestParts  = latest.split(".").mapNotNull { it.toIntOrNull() }
+            val currentParts = current.split(".").mapNotNull { it.toIntOrNull() }
+            var isNewer = false
+            for (i in 0 until maxOf(latestParts.size, currentParts.size)) {
+                val l = latestParts.getOrElse(i) { 0 }
+                val c = currentParts.getOrElse(i) { 0 }
+                if (l > c) { isNewer = true; break }
+                if (l < c) { isNewer = false; break }
+            }
+            if (!isNewer) return@withContext null
 
             // Encontrar o asset .apk na release
             val assets = obj.getJSONArray("assets")

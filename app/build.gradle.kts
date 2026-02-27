@@ -13,8 +13,8 @@ android {
         applicationId = "com.exemplo.musicplayer"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"   // <-- deve coincidir com a tag do GitHub (v1.1.0)
+        versionCode = 3
+        versionName = "1.1.2"   // <-- deve coincidir com a tag do GitHub (v1.1.2)
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
