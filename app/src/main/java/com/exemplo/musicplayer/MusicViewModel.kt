@@ -1,7 +1,10 @@
 package com.exemplo.musicplayer
 
 import android.app.Application
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.C
@@ -16,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 // ---------------------------------------------------------------------------
 // Enums de estado do player
@@ -79,7 +83,26 @@ data class MusicUiState(
     /** playlistId → lista ordenada de songIds */
     val playlistSongIds: Map<Long, List<Long>> = emptyMap(),
     /** ID da playlist aberta no detalhe (null = nenhuma) */
-    val openPlaylistId: Long? = null
+    val openPlaylistId: Long? = null,
+    /** Histórico de reproduções (mais recentes primeiro) */
+    val playHistory: List<SongPlayHistory> = emptyList(),
+    /** Mostra ecrã de pesquisa global */
+    val showSearch: Boolean = false,
+    /** Query da pesquisa global */
+    val globalSearchQuery: String = "",
+    /** Mostra ecrã Wrapped anual */
+    val showWrapped: Boolean = false,
+    /** Dados do Wrapped calculados */
+    val wrappedData: WrappedData? = null
+)
+
+/** Dados calculados para o Wrapped anual */
+data class WrappedData(
+    val year: Int,
+    val totalPlays: Int,
+    val estimatedHours: Float,
+    val topSongs: List<TopSongRow>,
+    val topArtists: List<TopArtistRow>
 )
 
 // ---------------------------------------------------------------------------
@@ -99,6 +122,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private var mediaController: MediaController? = null
     private var positionJob: Job? = null
 
+    /** Receptor de broadcasts do widget (botões play/pause/skip) */
+    private val widgetReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                PlayerWidget.ACTION_PLAY_PAUSE -> togglePlayPause()
+                PlayerWidget.ACTION_SKIP_NEXT  -> skipToNext()
+                PlayerWidget.ACTION_SKIP_PREV  -> skipToPrevious()
+            }
+        }
+    }
+
     init {
         loadSongs()
         checkForUpdate()
@@ -115,6 +149,21 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update { it.copy(playlistSongIds = map) }
             }
         }
+        // Observa o histórico de reproduções em tempo real
+        viewModelScope.launch {
+            db.historyDao().getAll().collect { history ->
+                _uiState.update { it.copy(playHistory = history) }
+            }
+        }
+
+        // Regista receptor dos botões do widget
+        val filter = IntentFilter().apply {
+            addAction(PlayerWidget.ACTION_PLAY_PAUSE)
+            addAction(PlayerWidget.ACTION_SKIP_NEXT)
+            addAction(PlayerWidget.ACTION_SKIP_PREV)
+        }
+        @Suppress("UnspecifiedRegisterReceiverFlag")
+        application.registerReceiver(widgetReceiver, filter)
     }
 
     // ---- Player Listener -------------------------------------------------------
@@ -126,6 +175,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             _uiState.update { it.copy(isPlaying = isPlaying) }
+            // Actualiza widget
+            _uiState.value.currentSong?.let { song ->
+                PlayerWidget.updateWidgets(
+                    getApplication(), song.title, song.artistOrUnknown,
+                    isPlaying, song.albumArtUri?.toString()
+                )
+            }
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -145,12 +201,30 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 prefs.edit().putInt("total_plays", totalPlays).apply()
                 val showModal = totalPlays == 5 || totalPlays == 15 || totalPlays == 30
 
+                // Grava no histórico Room DB
+                viewModelScope.launch {
+                    db.historyDao().insertPlay(
+                        SongPlayHistory(
+                            songId      = song.id,
+                            title       = song.title,
+                            artist      = song.artistOrUnknown,
+                            album       = song.albumOrUnknown,
+                            albumArtUri = song.albumArtUri?.toString()
+                        )
+                    )
+                }
+
                 _uiState.update { it.copy(
                     currentSong    = song,
                     recentSongs    = newRecent,
                     artistPlayCount = newCount,
                     showShareModal = it.showShareModal || showModal
                 ) }
+                // Actualiza widget com nova música
+                PlayerWidget.updateWidgets(
+                    getApplication(), song.title, song.artistOrUnknown,
+                    true, song.albumArtUri?.toString()
+                )
             } else {
                 _uiState.update { it.copy(currentSong = song) }
             }
@@ -235,6 +309,27 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun closeSubDetail() = _uiState.update { it.copy(openArtistName = null, openAlbumName = null) }
     fun dismissShareModal() = _uiState.update { it.copy(showShareModal = false) }
     fun dismissUpdateModal() = _uiState.update { it.copy(updateInfo = null) }
+    fun setShowSearch(show: Boolean) = _uiState.update { it.copy(showSearch = show, globalSearchQuery = if (!show) "" else it.globalSearchQuery) }
+    fun onGlobalSearchQuery(q: String) = _uiState.update { it.copy(globalSearchQuery = q) }
+    fun setShowWrapped(show: Boolean) = _uiState.update { it.copy(showWrapped = show) }
+
+    fun loadWrapped(year: Int = Calendar.getInstance().get(Calendar.YEAR)) {
+        viewModelScope.launch {
+            val cal = Calendar.getInstance()
+            cal.set(year, Calendar.JANUARY, 1, 0, 0, 0); cal.set(Calendar.MILLISECOND, 0)
+            val from = cal.timeInMillis
+            cal.set(year + 1, Calendar.JANUARY, 1, 0, 0, 0)
+            val to = cal.timeInMillis
+            val topSongs   = db.historyDao().getTopSongsByYear(from, to, 5)
+            val topArtists = db.historyDao().getTopArtistsByYear(from, to, 5)
+            val totalPlays = db.historyDao().getByYear(from, to).size
+            val hours      = totalPlays * 3f / 60f   // estimativa: 3 min/música
+            _uiState.update { it.copy(
+                wrappedData = WrappedData(year, totalPlays, hours, topSongs, topArtists),
+                showWrapped = true
+            ) }
+        }
+    }
 
     private fun checkForUpdate() {
         viewModelScope.launch {
@@ -346,6 +441,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         mediaController?.removeListener(playerListener)
         positionJob?.cancel()
+        try { getApplication<Application>().unregisterReceiver(widgetReceiver) } catch (_: Exception) {}
         super.onCleared()
     }
 }

@@ -82,14 +82,22 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/smartplayer.jks
+
       - name: Build Release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon
 
       # Renomear o APK com a versão da tag (ex: Smart_Player_v1.2.0.apk)
       - name: Rename APK
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          mv app/build/outputs/apk/release/app-release-unsigned.apk \
+          mv app/build/outputs/apk/release/app-release.apk \
              app/build/outputs/apk/release/Smart_Player_${VERSION}.apk
           echo "APK_NAME=Smart_Player_${VERSION}.apk" >> $GITHUB_ENV
 

@@ -13,9 +13,28 @@ android {
         applicationId = "com.exemplo.musicplayer"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"   // <-- deve coincidir com a tag do GitHub (v1.0.0)
+        versionCode = 2
+        versionName = "1.1.0"   // <-- deve coincidir com a tag do GitHub (v1.1.0)
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Ler credenciais do keystore em local (ficheiro) ou no CI (variáveis de ambiente)
+    val keystoreFile   = rootProject.file("app/smartplayer.jks")
+    val storePass      = System.getenv("KEYSTORE_PASSWORD") ?: "SmartPlayer2026!"
+    val releaseAlias   = System.getenv("KEY_ALIAS")         ?: "smartplayer"
+    val keyPassEnv     = System.getenv("KEY_PASSWORD")      ?: "SmartPlayer2026!"
+
+    signingConfigs {
+        create("release") {
+            if (keystoreFile.exists()) {
+                storeFile          = keystoreFile
+                storePassword      = storePass
+                keyAlias           = releaseAlias
+                keyPassword        = keyPassEnv
+                enableV1Signing    = true   // compatibilidade Android < 7
+                enableV2Signing    = true   // Android 7+
+            }
+        }
     }
 
     buildTypes {
@@ -25,6 +44,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

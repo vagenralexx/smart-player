@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Smart Player</string>
+    <string name="widget_description">Controla a música diretamente no ecrã inicial</string>
 </resources>

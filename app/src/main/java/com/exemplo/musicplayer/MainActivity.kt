@@ -24,7 +24,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -136,13 +138,15 @@ fun MusicPlayerApp(viewModel: MusicViewModel) {
 fun MainScreen(uiState: MusicUiState, viewModel: MusicViewModel) {
     val openPlaylist = uiState.openPlaylistId?.let { id -> uiState.playlists.find { it.id == id } }
 
-    // Cadeia de BackHandlers: nowPlaying → artistDetail → albumDetail → playlistDetail
-    BackHandler(enabled = uiState.showNowPlaying) { viewModel.setShowNowPlaying(false) }
-    BackHandler(enabled = !uiState.showNowPlaying &&
+    // Cadeia de BackHandlers: search → wrapped → nowPlaying → artistDetail → albumDetail → playlistDetail
+    BackHandler(enabled = uiState.showSearch) { viewModel.setShowSearch(false) }
+    BackHandler(enabled = uiState.showWrapped && !uiState.showSearch) { viewModel.setShowWrapped(false) }
+    BackHandler(enabled = uiState.showNowPlaying && !uiState.showSearch && !uiState.showWrapped) { viewModel.setShowNowPlaying(false) }
+    BackHandler(enabled = !uiState.showNowPlaying && !uiState.showSearch && !uiState.showWrapped &&
             (uiState.openArtistName != null || uiState.openAlbumName != null)) {
         viewModel.closeSubDetail()
     }
-    BackHandler(enabled = !uiState.showNowPlaying &&
+    BackHandler(enabled = !uiState.showNowPlaying && !uiState.showSearch && !uiState.showWrapped &&
             uiState.openArtistName == null && uiState.openAlbumName == null && openPlaylist != null) {
         viewModel.openPlaylist(null)
     }
@@ -181,6 +185,9 @@ fun MainScreen(uiState: MusicUiState, viewModel: MusicViewModel) {
                     uiState.activeTab == AppTab.LIBRARY -> TopAppBar(
                         title = { Text("Smart Player", fontWeight = FontWeight.Bold) },
                         actions = {
+                            IconButton(onClick = { viewModel.setShowSearch(true) }) {
+                                Icon(Icons.Default.Search, contentDescription = "Pesquisar")
+                            }
                             IconButton(onClick = { viewModel.loadSongs() }) {
                                 Icon(Icons.Default.Refresh, contentDescription = "Actualizar")
                             }
@@ -189,6 +196,14 @@ fun MainScreen(uiState: MusicUiState, viewModel: MusicViewModel) {
                     )
                     uiState.activeTab == AppTab.HOME -> TopAppBar(
                         title = { Text("Smart Player", fontWeight = FontWeight.Bold) },
+                        actions = {
+                            IconButton(onClick = { viewModel.loadWrapped() }) {
+                                Icon(Icons.Default.BarChart, contentDescription = "Wrapped anual")
+                            }
+                            IconButton(onClick = { viewModel.setShowSearch(true) }) {
+                                Icon(Icons.Default.Search, contentDescription = "Pesquisar")
+                            }
+                        },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
                     )
                     else -> TopAppBar(
@@ -324,6 +339,28 @@ fun MainScreen(uiState: MusicUiState, viewModel: MusicViewModel) {
         if (uiState.showShareModal) {
             ShareModal(onDismiss = { viewModel.dismissShareModal() })
         }
+
+        // ---- Pesquisa global -----------------------------------------------
+        AnimatedVisibility(
+            visible  = uiState.showSearch,
+            enter    = fadeIn(tween(200)),
+            exit     = fadeOut(tween(150)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            GlobalSearchScreen(uiState = uiState, viewModel = viewModel)
+        }
+
+        // ---- Wrapped anual -------------------------------------------------
+        AnimatedVisibility(
+            visible  = uiState.showWrapped,
+            enter    = slideInVertically(animationSpec = tween(400), initialOffsetY = { it }) + fadeIn(tween(300)),
+            exit     = slideOutVertically(animationSpec = tween(350), targetOffsetY  = { it }) + fadeOut(tween(250)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            uiState.wrappedData?.let { data ->
+                WrappedScreen(data = data, onClose = { viewModel.setShowWrapped(false) })
+            }
+        }
     }
 }
 
@@ -343,6 +380,8 @@ fun HomeContent(uiState: MusicUiState, viewModel: MusicViewModel) {
         return
     }
 
+    // Stats from history
+    val totalHistoryPlays = uiState.playHistory.size
     // Sugestões: faixas de artistas mais tocados que ainda não estão nos recentes
     val suggestions = remember(uiState.artistPlayCount, uiState.recentSongs, uiState.songs) {
         val recentIds = uiState.recentSongs.map { it.id }.toSet()
@@ -363,6 +402,42 @@ fun HomeContent(uiState: MusicUiState, viewModel: MusicViewModel) {
         modifier       = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
+        // ---- Card Wrapped (só aparece com histórico suficiente) -----------------
+        if (totalHistoryPlays >= 5) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape    = RoundedCornerShape(16.dp),
+                    colors   = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    ),
+                    onClick  = { viewModel.loadWrapped() }
+                ) {
+                    Row(
+                        modifier          = Modifier.padding(16.dp).fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.BarChart, null, modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                            Text(
+                                "O teu Wrapped está pronto 🎉",
+                                style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                "$totalHistoryPlays reproduções • Ver as tuas estatísticas",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            )
+                        }
+                        Icon(Icons.Default.ChevronRight, null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+            }
+        }
+
         // ---- Secção Recentes -----------------------------------------------
         if (uiState.recentSongs.isNotEmpty()) {
             item {
@@ -440,9 +515,10 @@ private fun SongCard(song: Song, isCurrentSong: Boolean, onClick: () -> Unit) {
         modifier            = border.clickable(onClick = onClick).width(120.dp).padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        val art = artworkModel(song.albumArtUri, song.artistOrUnknown, song.albumOrUnknown)
         Card(shape = RoundedCornerShape(10.dp), elevation = CardDefaults.cardElevation(4.dp)) {
             AsyncImage(
-                model              = song.albumArtUri,
+                model              = art,
                 contentDescription = null,
                 modifier           = Modifier.size(104.dp).background(MaterialTheme.colorScheme.surfaceVariant),
                 contentScale       = ContentScale.Crop
@@ -752,10 +828,27 @@ fun ArtistDetailScreen(
         songs.filter { it.artistOrUnknown == artistName }
             .sortedWith(compareBy({ it.albumOrUnknown }, { it.track }, { it.title }))
     }
+
+    // MusicBrainz: carrega info do artista assíncrono
+    var artistInfo   by remember(artistName) { mutableStateOf<MusicBrainzFetcher.ArtistInfo?>(null) }
+    var mbLoading    by remember(artistName) { mutableStateOf(true) }
+    LaunchedEffect(artistName) {
+        artistInfo = MusicBrainzFetcher.fetchArtistInfo(artistName)
+        mbLoading  = false
+    }
+
+    // iTunes: artwork de fallback para o artista
+    val artworkUri   = artistSongs.firstOrNull()?.albumArtUri
+    val artworkModel = artworkModel(
+        albumArtUri = artworkUri,
+        artist      = artistName,
+        album       = artistSongs.firstOrNull()?.albumOrUnknown ?: ""
+    )
+
     Column(modifier = modifier.fillMaxSize()) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(
-                model = artistSongs.firstOrNull()?.albumArtUri, contentDescription = null,
+                model = artworkModel, contentDescription = null,
                 modifier = Modifier.size(80.dp).clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentScale = ContentScale.Crop
@@ -766,6 +859,25 @@ fun ArtistDetailScreen(
                 Text("${artistSongs.size} música${if (artistSongs.size != 1) "s" else ""}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // MusicBrainz: descrição + géneros
+                artistInfo?.let { info ->
+                    if (info.disambiguation != null) {
+                        Text(info.disambiguation, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis)
+                    }
+                    if (info.genres.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            info.genres.take(3).forEach { genre ->
+                                SuggestionChip(
+                                    onClick = {},
+                                    label   = { Text(genre, style = MaterialTheme.typography.labelSmall) }
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
         HorizontalDivider()
@@ -1252,6 +1364,19 @@ fun MiniPlayer(
 }
 
 // ---------------------------------------------------------------------------
+// Helper: modelo de artwork com fallback iTunes
+// ---------------------------------------------------------------------------
+@Composable
+private fun artworkModel(albumArtUri: android.net.Uri?, artist: String, album: String): Any? {
+    if (albumArtUri != null) return albumArtUri
+    var url by remember(artist, album) { mutableStateOf<String?>(null) }
+    LaunchedEffect(artist, album) {
+        if (url == null) url = ArtworkFetcher.fetchArtworkUrl(artist, album)
+    }
+    return url
+}
+
+// ---------------------------------------------------------------------------
 // Now Playing — ecrã completo com gradiente extraído da capa (Palette)
 // ---------------------------------------------------------------------------
 @Composable
@@ -1271,6 +1396,9 @@ fun NowPlayingScreen(
     onCycleRepeat: () -> Unit
 ) {
     val context = LocalContext.current
+
+    // iTunes fallback artwork
+    val artModel = artworkModel(song.albumArtUri, song.artistOrUnknown, song.albumOrUnknown)
 
     // Extrai a cor dominante da capa do álbum via biblioteca Palette
     var dominantColor by remember(song.id) { mutableStateOf(Color(0xFF1A1A2E)) }
@@ -1354,7 +1482,7 @@ fun NowPlayingScreen(
                 modifier  = Modifier.size(280.dp)
             ) {
                 AsyncImage(
-                    model              = song.albumArtUri,
+                    model              = artModel,
                     contentDescription = "Capa do álbum",
                     modifier           = Modifier.fillMaxSize().background(Color.DarkGray),
                     contentScale       = ContentScale.Crop
@@ -1457,6 +1585,387 @@ fun NowPlayingScreen(
 private fun formatTime(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
     return "%d:%02d".format(s / 60, s % 60)
+}
+
+// ---------------------------------------------------------------------------
+// Pesquisa Global — ecrã completo com resultados agrupados
+// ---------------------------------------------------------------------------
+@Composable
+fun GlobalSearchScreen(uiState: MusicUiState, viewModel: MusicViewModel) {
+    val query = uiState.globalSearchQuery
+
+    // Resultados agrupados
+    val filteredSongs = remember(query, uiState.songs) {
+        if (query.isBlank()) emptyList()
+        else uiState.songs.filter {
+            it.title.contains(query, ignoreCase = true) ||
+            it.artistOrUnknown.contains(query, ignoreCase = true) ||
+            it.albumOrUnknown.contains(query, ignoreCase = true)
+        }.take(20)
+    }
+    val filteredArtists = remember(query, uiState.songs) {
+        if (query.isBlank()) emptyList()
+        else uiState.songs.map { it.artistOrUnknown }.distinct()
+            .filter { it.contains(query, ignoreCase = true) }.take(8)
+    }
+    val filteredAlbums = remember(query, uiState.songs) {
+        if (query.isBlank()) emptyList()
+        else uiState.songs.map { it.albumOrUnknown }.distinct()
+            .filter { it.contains(query, ignoreCase = true) }.take(8)
+    }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
+            // ---- TopBar com botão voltar + campo de busca -------------------
+            Row(
+                modifier          = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { viewModel.setShowSearch(false) }) {
+                    Icon(Icons.Default.ArrowBack, "Fechar pesquisa")
+                }
+                OutlinedTextField(
+                    value          = query,
+                    onValueChange  = viewModel::onGlobalSearchQuery,
+                    modifier       = Modifier.weight(1f),
+                    placeholder    = { Text("Músicas, artistas, álbuns...") },
+                    singleLine     = true,
+                    shape          = RoundedCornerShape(50),
+                    trailingIcon   = {
+                        if (query.isNotEmpty())
+                            IconButton(onClick = { viewModel.onGlobalSearchQuery("") }) {
+                                Icon(Icons.Default.Clear, "Limpar")
+                            }
+                    }
+                )
+                Spacer(Modifier.width(4.dp))
+            }
+            HorizontalDivider()
+
+            if (query.isBlank()) {
+                // ---- Estado inicial: histórico recente ----------------------
+                if (uiState.playHistory.isNotEmpty()) {
+                    LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
+                        item {
+                            Text(
+                                "Tocadas recentemente",
+                                style     = MaterialTheme.typography.labelMedium,
+                                color     = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier  = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        items(uiState.playHistory.take(10), key = { it.id }) { entry ->
+                            val song = uiState.songs.firstOrNull { it.id == entry.songId }
+                            Row(
+                                modifier          = Modifier.fillMaxWidth()
+                                    .clickable { song?.let { viewModel.playSong(it); viewModel.setShowSearch(false) } }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.History, null, modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(entry.title, style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(entry.artist, style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(start = 48.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                        }
+                    }
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Search, null, modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(8.dp))
+                            Text("Pesquisa músicas, artistas ou álbuns",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            } else {
+                // ---- Resultados agrupados ----------------------------------
+                LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
+                    // Músicas
+                    if (filteredSongs.isNotEmpty()) {
+                        item {
+                            Text("Músicas", style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                        }
+                        items(filteredSongs, key = { "gs_song_${it.id}" }) { song ->
+                            SongItem(
+                                song          = song,
+                                isCurrentSong = song.id == uiState.currentSong?.id,
+                                onClick       = { viewModel.playSong(song, filteredSongs); viewModel.setShowSearch(false) }
+                            )
+                        }
+                    }
+                    // Artistas
+                    if (filteredArtists.isNotEmpty()) {
+                        item {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            Text("Artistas", style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                        }
+                        items(filteredArtists, key = { "gs_art_$it" }) { artist ->
+                            val count = uiState.songs.count { it.artistOrUnknown == artist }
+                            Row(
+                                modifier          = Modifier.fillMaxWidth()
+                                    .clickable { viewModel.setShowSearch(false); viewModel.openArtistDetail(artist) }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val art = uiState.songs.firstOrNull { it.artistOrUnknown == artist }?.albumArtUri
+                                AsyncImage(model = art, contentDescription = null,
+                                    modifier = Modifier.size(44.dp).clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentScale = ContentScale.Crop)
+                                Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                                    Text(artist, style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("$count músicas", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Icon(Icons.Default.ChevronRight, null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(start = 72.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                        }
+                    }
+                    // Álbuns
+                    if (filteredAlbums.isNotEmpty()) {
+                        item {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                            Text("Álbuns", style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                        }
+                        items(filteredAlbums, key = { "gs_alb_$it" }) { album ->
+                            val albumSong = uiState.songs.firstOrNull { it.albumOrUnknown == album }
+                            Row(
+                                modifier          = Modifier.fillMaxWidth()
+                                    .clickable { viewModel.setShowSearch(false); viewModel.openAlbumDetail(album) }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AsyncImage(model = albumSong?.albumArtUri, contentDescription = null,
+                                    modifier = Modifier.size(44.dp).clip(RoundedCornerShape(6.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentScale = ContentScale.Crop)
+                                Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                                    Text(album, style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(albumSong?.artistOrUnknown ?: "", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                Icon(Icons.Default.ChevronRight, null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(start = 72.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                        }
+                    }
+                    // Sem resultados
+                    if (filteredSongs.isEmpty() && filteredArtists.isEmpty() && filteredAlbums.isEmpty()) {
+                        item {
+                            Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.SearchOff, null, modifier = Modifier.size(64.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Spacer(Modifier.height(8.dp))
+                                    Text("Nenhum resultado para \"$query\"",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        textAlign = TextAlign.Center)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Wrapped Anual — resumo das estatísticas de audição
+// ---------------------------------------------------------------------------
+@Composable
+fun WrappedScreen(data: WrappedData, onClose: () -> Unit) {
+    val gradStart = Color(0xFF6A0DAD)  // roxo
+    val gradEnd   = Color(0xFF1A0033)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(gradStart, gradEnd)))
+    ) {
+        LazyColumn(
+            modifier       = Modifier.fillMaxSize().systemBarsPadding(),
+            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp)
+        ) {
+            // Botão fechar
+            item {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Spacer(Modifier.size(48.dp))
+                    Text("Wrapped", color = Color.White.copy(alpha = 0.85f),
+                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.Default.Close, "Fechar", tint = Color.White, modifier = Modifier.size(24.dp))
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+
+            // Ano + total
+            item {
+                Text(
+                    text      = data.year.toString(),
+                    color     = Color.White,
+                    style     = MaterialTheme.typography.displayLarge,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    text  = "o teu ano em músicas 🎵",
+                    color = Color.White.copy(alpha = 0.75f),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Spacer(Modifier.height(24.dp))
+            }
+
+            // Cards de stats
+            item {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Total reproduções
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors   = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f)),
+                        shape    = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(data.totalPlays.toString(), color = Color.White,
+                                style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
+                            Text("reproduções", color = Color.White.copy(alpha = 0.75f),
+                                style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center)
+                        }
+                    }
+                    // Horas estimadas
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors   = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.15f)),
+                        shape    = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("%.1f".format(data.estimatedHours), color = Color.White,
+                                style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
+                            Text("horas ouvidas", color = Color.White.copy(alpha = 0.75f),
+                                style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(28.dp))
+            }
+
+            // Top Músicas
+            if (data.topSongs.isNotEmpty()) {
+                item {
+                    Text("🎵 As tuas 5 músicas favoritas",
+                        color = Color.White, style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+                }
+                itemsIndexed(data.topSongs) { idx, row ->
+                    Row(
+                        modifier          = Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White.copy(alpha = if (idx == 0) 0.2f else 0.1f))
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text      = "#${idx + 1}",
+                            color     = if (idx == 0) Color(0xFFFFD700) else Color.White.copy(alpha = 0.7f),
+                            style     = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier  = Modifier.width(36.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(row.title, color = Color.White, style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(row.artist, color = Color.White.copy(alpha = 0.7f),
+                                style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Text(
+                            text  = "${row.playCount}x",
+                            color = Color.White.copy(alpha = 0.85f),
+                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+                item { Spacer(Modifier.height(16.dp)) }
+            }
+
+            // Top Artistas
+            if (data.topArtists.isNotEmpty()) {
+                item {
+                    Text("🎤 Os teus 5 artistas favoritos",
+                        color = Color.White, style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+                }
+                itemsIndexed(data.topArtists) { idx, row ->
+                    Row(
+                        modifier          = Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White.copy(alpha = if (idx == 0) 0.2f else 0.1f))
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text      = "#${idx + 1}",
+                            color     = if (idx == 0) Color(0xFFFFD700) else Color.White.copy(alpha = 0.7f),
+                            style     = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier  = Modifier.width(36.dp)
+                        )
+                        Text(row.artist, color = Color.White, style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            text  = "${row.playCount}x",
+                            color = Color.White.copy(alpha = 0.85f),
+                            style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+                item { Spacer(Modifier.height(24.dp)) }
+            }
+
+            // Footer
+            item {
+                Text(
+                    text      = "Smart Player • ${data.year}",
+                    color     = Color.White.copy(alpha = 0.5f),
+                    style     = MaterialTheme.typography.labelSmall,
+                    modifier  = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

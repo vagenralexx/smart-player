@@ -17,7 +17,10 @@ app/build/
 # Logs de compilação
 build_output*.txt
 build3.txt
+build_rel.txt
+build_v*.txt
 
 # Keystore — NUNCA versionar chaves de assinatura
 *.jks
 *.keystore
+*.jks.b64
