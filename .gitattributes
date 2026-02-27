@@ -1,0 +1,12 @@
+* text=auto eol=lf
+
+gradlew text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.jar binary
+*.keystore binary
+*.jks binary
