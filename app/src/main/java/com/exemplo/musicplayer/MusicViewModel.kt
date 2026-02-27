@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.C
@@ -162,8 +163,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             addAction(PlayerWidget.ACTION_SKIP_NEXT)
             addAction(PlayerWidget.ACTION_SKIP_PREV)
         }
-        @Suppress("UnspecifiedRegisterReceiverFlag")
-        application.registerReceiver(widgetReceiver, filter)
+        ContextCompat.registerReceiver(
+            application, widgetReceiver, filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     // ---- Player Listener -------------------------------------------------------
