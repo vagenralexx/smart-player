@@ -24,7 +24,7 @@ import java.net.URL
 object UpdateChecker {
 
     // ---- MODIFICA ESTES DOIS VALORES após criar o repositório ----
-    private const val GITHUB_OWNER = "SEU_USERNAME"   // ex: "joaosilva"
+    private const val GITHUB_OWNER = "vagenralexx"   // ex: "joaosilva"
     private const val GITHUB_REPO  = "smart-player"   // nome do repositório
 
     private const val API_URL =
