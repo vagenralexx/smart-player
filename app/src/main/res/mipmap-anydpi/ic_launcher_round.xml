@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícone round legado para Android 7.0–7.1 (API 24-25) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- Fundo circular -->
+    <path
+        android:fillColor="#6650A4"
+        android:pathData="M24,24m-24,0a24,24 0,1 1,48 0a24,24 0,1 1,-48 0" />
+
+    <!-- Nota musical -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M28,14 L28,26.5 C27.4,26.2 26.7,26 25.9,26 C24.1,26 22.7,27.1 22.7,28.5 C22.7,29.9 24.1,31 25.9,31 C27.7,31 29.1,29.9 29.1,28.5 L29.1,17 L32,16.3 L32,14 Z" />
+</vector>

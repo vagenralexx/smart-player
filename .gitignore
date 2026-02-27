@@ -1,0 +1,23 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# APK/AAB gerados
+*.apk
+*.aab
+app/build/
+
+# Logs de compilação
+build_output*.txt
+build3.txt
+
+# Keystore — NUNCA versionar chaves de assinatura
+*.jks
+*.keystore

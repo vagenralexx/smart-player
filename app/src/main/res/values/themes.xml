@@ -1,0 +1,12 @@
+<resources>
+    <!--
+        Tema base do app.
+        O Jetpack Compose usa MaterialTheme programaticamente,
+        mas o sistema Android ainda precisa de um tema XML para a Activity
+        antes do Compose assumir o controle.
+    -->
+    <style name="Theme.MusicPlayer" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- A janela se torna transparente enquanto o Compose carrega -->
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>
